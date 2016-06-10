@@ -7,6 +7,8 @@ import os, shutil
 from django.core.files.move import file_move_safe
 from django.core.files.base import ContentFile
 
+import qiniu.rs
+
 class StorageMixin(object):
     """
     Adds some useful methods to the Storage class.
@@ -111,3 +113,50 @@ class S3BotoStorageMixin(StorageMixin):
         dirlist = self.bucket.list(self._encode_name(name))
         for item in dirlist:
             item.delete()
+
+
+class QiniuStorageMixin(StorageMixin):
+
+    def isfile(self, name):
+        return self.exists(name)
+
+    def isdir(self, name):
+        if not name:  # Empty name is a directory
+            return True
+
+        if self.isfile(name):
+            return False
+
+        dirs, files = self.listdir(name)
+        return dirs or files
+
+    def move(self, old_file_name, new_file_name, allow_overwrite=False):
+
+        if self.exists(new_file_name):
+            if allow_overwrite:
+                self.delete(new_file_name)
+            else:
+                raise "The destination file '%s' exists and allow_overwrite is False" % new_file_name
+
+        old_key_name = self._normalize_name(self._clean_name(old_file_name))
+        new_key_name = self._normalize_name(self._clean_name(new_file_name))
+
+        ret, err = qiniu.rs.Client().copy(self.bucket_name, old_key_name, self.bucket_name, new_key_name)
+
+        if err:
+            raise "Couldn't copy '%s' to '%s'" % (old_file_name, new_file_name)
+
+        self.delete(old_file_name)
+
+    def makedirs(self, name):
+        self._save(name + "/.folder", ContentFile(""))
+
+    def rmtree(self, name):
+        dirs, files = self.listdir(name)
+        if files:
+            entries = []
+            for f in files:
+                entries.append( qiniu.rs.EntryPath(self.bucket_name, name+'/'+f) )
+            qiniu.rs.Client().batch_delete(entries)
+        for d in dirs:
+            self.rmtree(name+'/'+d)
