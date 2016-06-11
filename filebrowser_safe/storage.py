@@ -138,15 +138,23 @@ class QiniuStorageMixin(StorageMixin):
             else:
                 raise "The destination file '%s' exists and allow_overwrite is False" % new_file_name
 
-        old_key_name = self._normalize_name(self._clean_name(old_file_name))
-        new_key_name = self._normalize_name(self._clean_name(new_file_name))
+        if (self.isfile(old_file_name)):
+            old_key_name = self._normalize_name(self._clean_name(old_file_name))
+            new_key_name = self._normalize_name(self._clean_name(new_file_name))
 
-        ret, err = qiniu.rs.Client().copy(self.bucket_name, old_key_name, self.bucket_name, new_key_name)
+            ret, err = qiniu.rs.Client().copy(self.bucket_name, old_key_name, self.bucket_name, new_key_name)
 
-        if err:
-            raise "Couldn't copy '%s' to '%s'" % (old_file_name, new_file_name)
+            if err:
+                raise "Couldn't copy '%s' to '%s'" % (old_file_name, new_file_name)
 
-        self.delete(old_file_name)
+            self.delete(old_file_name)
+        else:
+            dirs, files = self.listdir(old_file_name)
+            for f in files:
+                self.move(old_file_name+'/'+f, new_file_name+'/'+f, allow_overwrite)
+            for d in dirs:
+                self.move(old_file_name+'/'+d, new_file_name+'/'+d, allow_overwrite)
+
 
     def makedirs(self, name):
         self._save(name + "/.folder", ContentFile(""))
